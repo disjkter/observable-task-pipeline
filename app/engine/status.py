@@ -1,0 +1,31 @@
+from enum import StrEnum
+
+
+class TaskStatus(StrEnum):
+    QUEUED = "QUEUED"
+    RUNNING = "RUNNING"
+    RETRY_WAIT = "RETRY_WAIT"
+    SUCCEEDED = "SUCCEEDED"
+    FAILED = "FAILED"
+    CANCEL_REQUESTED = "CANCEL_REQUESTED"
+    CANCELED = "CANCELED"
+
+
+class StepStatus(StrEnum):
+    BLOCKED = "BLOCKED"
+    PENDING = "PENDING"
+    RUNNING = "RUNNING"
+    RETRY_WAIT = "RETRY_WAIT"
+    SUCCEEDED = "SUCCEEDED"
+    FAILED = "FAILED"
+    SKIPPED = "SKIPPED"
+    CANCEL_REQUESTED = "CANCEL_REQUESTED"
+    CANCELED = "CANCELED"
+
+
+TERMINAL_STEP_STATUSES = {
+    StepStatus.SUCCEEDED,
+    StepStatus.FAILED,
+    StepStatus.SKIPPED,
+    StepStatus.CANCELED,
+}

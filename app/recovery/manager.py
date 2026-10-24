@@ -5,7 +5,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
 from app.config import get_settings
-from app.engine.status import StepStatus
+from app.engine.status import StepStatus, TaskStatus
 from app.models import StepAttempt, StepResultCache, Task, TaskStep
 from app.resources.manager import reclaim_expired_resources
 from app.services.execution import clear_resource_lease
@@ -45,18 +45,42 @@ def recover_expired_steps(session: Session) -> int:
             details={"previous_worker_id": step.worker_id},
         )
 
+        if task.status == TaskStatus.CANCEL_REQUESTED:
+            if attempt:
+                attempt.status = StepStatus.CANCELED
+                attempt.finished_at = now
+                attempt.duration_ms = max(0, int((now - attempt.started_at).total_seconds() * 1000))
+            step.status = StepStatus.CANCELED
+            step.finished_at = now
+            step.lease_token = uuid.uuid4()
+            step.lease_until = None
+            step.worker_id = None
+            clear_resource_lease(session, step.id)
+            add_event(
+                session,
+                task,
+                "STEP_CANCELED",
+                step_id=step.id,
+                attempt_id=attempt.id if attempt else None,
+                new_status=step.status,
+            )
+            refresh_task(session, task)
+            recovered += 1
+            continue
+
         cache = None
         if step.input_hash:
             cache = session.scalar(
                 select(StepResultCache).where(StepResultCache.input_hash == step.input_hash)
             )
             artifact_path = ArtifactStore().path_for(step.step_key, step.input_hash)
-            if cache is None and artifact_path.is_file():
+            published_checksum = ArtifactStore.published_checksum(artifact_path)
+            if cache is None and published_checksum:
                 cache = StepResultCache(
                     input_hash=step.input_hash,
                     status=StepStatus.SUCCEEDED,
                     output_uri=str(artifact_path),
-                    checksum=ArtifactStore.checksum(str(artifact_path)),
+                    checksum=published_checksum,
                 )
                 session.add(cache)
         if cache and ArtifactStore.validate(cache.output_uri, cache.checksum):
@@ -67,12 +91,14 @@ def recover_expired_steps(session: Session) -> int:
             if attempt:
                 attempt.status = StepStatus.SUCCEEDED
                 attempt.finished_at = now
+                attempt.duration_ms = max(0, int((now - attempt.started_at).total_seconds() * 1000))
                 attempt.output_uri = cache.output_uri
             event_type = "ARTIFACT_RECOVERED"
         else:
             if attempt:
                 attempt.status = StepStatus.FAILED
                 attempt.finished_at = now
+                attempt.duration_ms = max(0, int((now - attempt.started_at).total_seconds() * 1000))
                 attempt.error_code = "WORKER_LOST"
                 attempt.error_message = "Worker lease expired"
                 attempt.retryable = True

@@ -88,7 +88,6 @@ def retry_failed_task(session: Session, task: Task) -> Task:
     for step in task.steps:
         if step.status == StepStatus.FAILED:
             step.status = StepStatus.PENDING
-            step.attempt_count = 0
             step.next_retry_at = None
         elif step.status == StepStatus.BLOCKED:
             step.status = StepStatus.BLOCKED

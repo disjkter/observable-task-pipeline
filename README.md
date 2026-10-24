@@ -41,7 +41,8 @@ transcode_video --------------------------------------> generate_report
 ## Windows 安装
 
 ```powershell
-cd 'E:\ProgramFiles\PythonProject\observable-task-pipeline'
+# 克隆或解压仓库后，在其父目录执行
+Set-Location .\observable-task-pipeline
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install --upgrade pip
@@ -50,6 +51,13 @@ Copy-Item .env.example .env
 ```
 
 在 Windows 原生 PostgreSQL 中创建本地账号和数据库：
+
+先确认 PostgreSQL 服务可用；如果命令未加入 PATH，请从 PostgreSQL 安装目录的 `bin` 目录运行：
+
+```powershell
+psql --version
+pg_isready -h localhost -p 5432
+```
 
 ```sql
 CREATE ROLE pipeline_user LOGIN;
@@ -155,6 +163,8 @@ Invoke-RestMethod "http://127.0.0.1:8000/api/tasks/$($task.id)/events"
 - `task_events`：可查询的状态与资源事件。
 - `step_result_cache`：按输入指纹唯一保护的有效产物。
 - `resource_leases`：持久化 MOCK GPU 容量租约。
+
+产物旁会原子发布 `.sha256` 校验 sidecar。数据库尚未登记时，恢复器只接受与该发布校验值一致的孤立产物。
 
 ## 已知限制
 

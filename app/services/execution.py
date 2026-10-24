@@ -244,6 +244,25 @@ def finish_failure(
     attempt = session.get(StepAttempt, claim.attempt_id)
     assert task is not None and attempt is not None
     now = datetime.now(UTC)
+    if task.status == TaskStatus.CANCEL_REQUESTED:
+        step.status = StepStatus.CANCELED
+        step.finished_at = now
+        step.lease_until = None
+        attempt.status = StepStatus.CANCELED
+        attempt.finished_at = now
+        attempt.duration_ms = max(0, int((now - attempt.started_at).total_seconds() * 1000))
+        release_gpu(session, task, step, claim.lease_token)
+        add_event(
+            session,
+            task,
+            "STEP_CANCELED",
+            step_id=step.id,
+            attempt_id=attempt.id,
+            old_status=StepStatus.RUNNING,
+            new_status=step.status,
+        )
+        refresh_task(session, task)
+        return True
     attempt.status = StepStatus.FAILED
     attempt.finished_at = now
     attempt.duration_ms = max(0, int((now - attempt.started_at).total_seconds() * 1000))

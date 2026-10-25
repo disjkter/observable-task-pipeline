@@ -1,13 +1,15 @@
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, Response, status
-from sqlalchemy import select, text
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
+from sqlalchemy import case, func, select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
 from app.database import get_session
+from app.engine.status import TaskStatus
+from app.engine.workflow import get_workflow
 from app.models import StepAttempt, Task, TaskStep
-from app.schemas import AttemptRead, EventRead, StepRead, TaskCreate, TaskRead
+from app.schemas import AttemptRead, EventRead, StepRead, TaskCreate, TaskListRead, TaskRead
 from app.services.tasks import (
     create_task,
     get_task,
@@ -62,6 +64,39 @@ def post_task(
     return task
 
 
+@router.get("/api/tasks", response_model=TaskListRead)
+def read_tasks(
+    task_status: TaskStatus | None = Query(default=None, alias="status"),
+    limit: int = Query(default=50, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
+    session: Session = Depends(get_session),
+) -> TaskListRead:
+    filters = [Task.status == task_status] if task_status else []
+    total = session.scalar(select(func.count()).select_from(Task).where(*filters)) or 0
+    items = list(
+        session.scalars(
+            select(Task)
+            .where(*filters)
+            .order_by(Task.created_at.desc(), Task.id.desc())
+            .offset(offset)
+            .limit(limit)
+        )
+    )
+    counts = {
+        row.status: row.count
+        for row in session.execute(
+            select(Task.status, func.count().label("count")).group_by(Task.status)
+        )
+    }
+    return TaskListRead(
+        items=[TaskRead.model_validate(task) for task in items],
+        total=total,
+        limit=limit,
+        offset=offset,
+        status_counts=counts,
+    )
+
+
 @router.get("/api/tasks/{task_id}", response_model=TaskRead)
 def read_task(task_id: uuid.UUID, session: Session = Depends(get_session)) -> Task:
     return require_task(session, task_id)
@@ -69,10 +104,18 @@ def read_task(task_id: uuid.UUID, session: Session = Depends(get_session)) -> Ta
 
 @router.get("/api/tasks/{task_id}/steps", response_model=list[StepRead])
 def read_steps(task_id: uuid.UUID, session: Session = Depends(get_session)) -> list[TaskStep]:
-    require_task(session, task_id)
+    task = require_task(session, task_id)
+    step_order = {
+        definition.key: index for index, definition in enumerate(get_workflow(task.task_type))
+    }
     return list(
         session.scalars(
-            select(TaskStep).where(TaskStep.task_id == task_id).order_by(TaskStep.created_at)
+            select(TaskStep)
+            .where(TaskStep.task_id == task_id)
+            .order_by(
+                case(step_order, value=TaskStep.step_key, else_=len(step_order)),
+                TaskStep.created_at,
+            )
         )
     )
 

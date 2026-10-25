@@ -28,6 +28,14 @@ class TaskRead(BaseModel):
     finished_at: datetime | None
 
 
+class TaskListRead(BaseModel):
+    items: list[TaskRead]
+    total: int
+    limit: int
+    offset: int
+    status_counts: dict[str, int]
+
+
 class StepRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

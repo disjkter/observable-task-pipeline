@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="动画任务执行详情">
+  <title>任务详情｜动画任务观测平台</title>
+  <link rel="stylesheet" href="/static/css/app.css">
+</head>
+<body>
+  <header class="topbar detail-topbar">
+    <div>
+      <a class="back-link" href="/">← 返回任务总览</a>
+      <p class="eyebrow">任务详情</p>
+      <h1 id="task-title">正在加载任务…</h1>
+      <p id="task-id" class="subtitle"></p>
+    </div>
+    <div class="topbar-actions">
+      <div id="health-indicator" class="health health-checking" role="status">
+        <span class="health-dot"></span><span id="health-text">正在连接后端</span>
+      </div>
+      <button id="refresh-button" class="button button-secondary" type="button">立即刷新</button>
+      <button id="retry-button" class="button button-warning hidden" type="button">重试任务</button>
+      <button id="cancel-button" class="button button-danger hidden" type="button">取消任务</button>
+    </div>
+  </header>
+
+  <main class="page-shell detail-shell">
+    <div id="page-message" class="message" role="alert">正在读取任务详情…</div>
+
+    <section id="task-overview" class="panel hidden">
+      <div class="panel-heading"><div><h2>任务基本信息</h2><p id="refresh-time" class="muted"></p></div></div>
+      <dl class="info-grid">
+        <div><dt>当前状态</dt><dd id="task-status"></dd></div>
+        <div><dt>执行进度</dt><dd id="task-progress"></dd></div>
+        <div><dt>任务类型</dt><dd id="task-type"></dd></div>
+        <div><dt>创建时间</dt><dd id="task-created"></dd></div>
+        <div><dt>开始时间</dt><dd id="task-started"></dd></div>
+        <div><dt>完成时间</dt><dd id="task-finished"></dd></div>
+        <div class="wide"><dt>错误信息</dt><dd id="task-error"></dd></div>
+      </dl>
+    </section>
+
+    <section class="panel">
+      <div class="panel-heading"><div><h2>六步骤执行流程</h2><p class="muted">步骤和依赖完全来自后端返回数据</p></div></div>
+      <div id="step-flow" class="step-flow"></div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-heading"><div><h2>执行尝试历史</h2><p class="muted">每次重试均保留独立记录</p></div></div>
+      <div id="attempt-sections" class="stack-list"></div>
+    </section>
+
+    <section class="two-column">
+      <section class="panel">
+        <div class="panel-heading"><div><h2>任务事件时间线</h2><p class="muted">状态、恢复、缓存及模拟资源事件</p></div></div>
+        <ol id="event-timeline" class="timeline"></ol>
+      </section>
+      <section class="panel">
+        <div class="panel-heading"><div><h2>产物与资源信息</h2><p class="muted">只展示后端实际返回的信息</p></div></div>
+        <div id="artifact-list" class="artifact-list"></div>
+      </section>
+    </section>
+  </main>
+
+  <dialog id="confirm-dialog" class="dialog">
+    <form method="dialog">
+      <div class="dialog-heading"><h2 id="confirm-title">确认操作</h2></div>
+      <p id="confirm-text"></p>
+      <div id="action-message" class="message hidden" role="alert"></div>
+      <div class="dialog-actions">
+        <button id="confirm-cancel" class="button button-secondary" value="cancel">返回</button>
+        <button id="confirm-submit" class="button button-primary" value="default">确认</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script type="module" src="/static/js/task-detail.js"></script>
+</body>
+</html>

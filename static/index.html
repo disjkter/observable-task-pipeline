@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Observable Task Pipeline 中文任务监控台">
+  <title>动画任务观测平台</title>
+  <link rel="stylesheet" href="/static/css/app.css">
+</head>
+<body>
+  <header class="topbar">
+    <div>
+      <p class="eyebrow">Observable Task Pipeline</p>
+      <h1>动画任务观测平台</h1>
+      <p class="subtitle">查看任务状态、执行进度与可靠性事件</p>
+    </div>
+    <div class="topbar-actions">
+      <div id="health-indicator" class="health health-checking" role="status">
+        <span class="health-dot"></span><span id="health-text">正在连接后端</span>
+      </div>
+      <button id="refresh-button" class="button button-secondary" type="button">立即刷新</button>
+      <button id="create-button" class="button button-primary" type="button">创建模拟任务</button>
+    </div>
+  </header>
+
+  <main class="page-shell">
+    <section class="summary-grid" aria-label="任务统计">
+      <article class="summary-card"><span>任务总数</span><strong id="count-total">—</strong></article>
+      <article class="summary-card"><span>等待执行</span><strong id="count-queued">—</strong></article>
+      <article class="summary-card"><span>执行中</span><strong id="count-running">—</strong></article>
+      <article class="summary-card"><span>等待重试</span><strong id="count-retry">—</strong></article>
+      <article class="summary-card"><span>已成功</span><strong id="count-succeeded">—</strong></article>
+      <article class="summary-card"><span>已失败</span><strong id="count-failed">—</strong></article>
+    </section>
+
+    <section class="panel">
+      <div class="panel-heading">
+        <div>
+          <h2>任务总览</h2>
+          <p id="refresh-time" class="muted">尚未刷新</p>
+        </div>
+        <label class="filter-label">状态筛选
+          <select id="status-filter">
+            <option value="">全部任务</option>
+            <option value="QUEUED">等待执行</option>
+            <option value="RUNNING">执行中</option>
+            <option value="RETRY_WAIT">等待重试</option>
+            <option value="SUCCEEDED">已成功</option>
+            <option value="FAILED">已失败</option>
+            <option value="CANCEL_REQUESTED">正在取消</option>
+            <option value="CANCELED">已取消</option>
+          </select>
+        </label>
+      </div>
+
+      <div id="page-message" class="message hidden" role="alert"></div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>任务编号</th><th>类型</th><th>状态</th><th>进度</th>
+              <th>创建时间</th><th>开始时间</th><th>完成时间</th><th>操作</th>
+            </tr>
+          </thead>
+          <tbody id="task-table-body"></tbody>
+        </table>
+      </div>
+      <div id="empty-state" class="empty-state hidden">
+        <strong>暂无任务</strong><span>可以创建一个模拟动画处理任务开始体验。</span>
+      </div>
+      <div class="pagination">
+        <button id="previous-page" class="button button-secondary" type="button">上一页</button>
+        <span id="page-info">第 1 页</span>
+        <button id="next-page" class="button button-secondary" type="button">下一页</button>
+      </div>
+    </section>
+  </main>
+
+  <dialog id="create-dialog" class="dialog">
+    <form id="create-form" method="dialog">
+      <div class="dialog-heading">
+        <div><p class="eyebrow">创建任务</p><h2>模拟动画素材处理</h2></div>
+        <button id="close-dialog" class="icon-button" type="button" aria-label="关闭">×</button>
+      </div>
+      <p class="muted">当前项目没有真实上传接口。素材地址用于 MOCK 处理器输入。</p>
+      <label>素材地址<input id="source-input" name="source" value="mock://assets/demo-animation.mp4" required></label>
+      <label>模型版本<input id="model-version-input" name="model_version" value="mock-animation-v1" required></label>
+      <label>幂等键（可选）<input id="idempotency-input" name="idempotency_key" maxlength="255" placeholder="留空则每次创建新任务"></label>
+      <label>每步模拟耗时（秒）<input id="sleep-input" name="sleep_seconds" type="number" min="0" max="30" step="0.1" value="0.5"></label>
+      <div id="form-message" class="message hidden" role="alert"></div>
+      <div class="dialog-actions">
+        <button class="button button-secondary" id="cancel-create" type="button">取消</button>
+        <button class="button button-primary" id="submit-create" type="submit">创建任务</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script type="module" src="/static/js/dashboard.js"></script>
+</body>
+</html>

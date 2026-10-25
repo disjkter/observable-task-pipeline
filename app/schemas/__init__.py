@@ -1,3 +1,3 @@
-from app.schemas.tasks import AttemptRead, EventRead, StepRead, TaskCreate, TaskRead
+from app.schemas.tasks import AttemptRead, EventRead, StepRead, TaskCreate, TaskListRead, TaskRead
 
-__all__ = ["AttemptRead", "EventRead", "StepRead", "TaskCreate", "TaskRead"]
+__all__ = ["AttemptRead", "EventRead", "StepRead", "TaskCreate", "TaskListRead", "TaskRead"]

@@ -92,6 +92,48 @@ python -m app.worker
 
 Swagger UI：<http://127.0.0.1:8000/docs>
 
+## 中文任务监控台
+
+API 启动后直接访问：
+
+```text
+http://127.0.0.1:8000/
+```
+
+监控台使用 FastAPI 同源托管的原生 HTML、CSS 和 JavaScript，无需安装 Node.js。页面所有状态均来自 PostgreSQL-backed API：
+
+- 首页显示真实任务列表、全库状态统计、服务端状态筛选和分页。
+- 首页可以创建 MOCK 动画处理任务；当前没有真实素材上传接口。
+- 点击任务编号或“查看详情”进入 `/tasks/{task_id}`。
+- 详情页显示任务、六步骤 DAG、每次执行尝试、事件时间线、产物地址、缓存命中和 MOCK GPU 资源事件。
+- 页面只在后端允许的状态显示任务级重试或取消，并在确认后调用真实 API。
+- 活动任务详情每 2.5 秒刷新；首页每 5 秒刷新。页面位于后台时暂停轮询，重新可见时立即刷新。
+
+建议演示顺序：
+
+1. 同时启动 API 与 Worker，打开监控台。
+2. 点击“创建模拟任务”，保留默认输入并提交。
+3. 在详情页观察步骤由等待执行到成功，以及 MOCK GPU 分配/释放事件。
+4. 使用 `fail_times` 故障配置通过 API 创建任务，可在页面观察失败、等待重试和多次 attempt。
+5. Worker 执行长步骤时停止进程，等待租约到期后重启 Worker，可在事件时间线看到 `LEASE_EXPIRED` 和恢复事件。
+6. 再次创建输入和配置完全相同的任务，可在详情页看到 `CACHE_HIT` 事件和缓存命中次数。
+
+监控台依赖的真实接口：
+
+```text
+GET  /health
+GET  /api/tasks
+POST /api/tasks
+GET  /api/tasks/{task_id}
+GET  /api/tasks/{task_id}/steps
+GET  /api/tasks/{task_id}/steps/{step_key}/attempts
+GET  /api/tasks/{task_id}/events
+POST /api/tasks/{task_id}/retry
+POST /api/tasks/{task_id}/cancel
+```
+
+当前页面不支持真实文件上传、步骤级重试、产物下载、实时 WebSocket、真实 GPU 指标或用户权限；产物路径只作为后端返回的文本展示。
+
 ## API 示例
 
 ```powershell

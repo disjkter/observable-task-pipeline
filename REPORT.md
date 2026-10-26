@@ -1,5 +1,15 @@
 # Observable Task Pipeline 实现报告
 
+## 版本迭代
+
+### v0.2.0（2026-10-26）
+
+本版针对空闲轮询、重复事件读取和单机产物路径做小步优化，没有引入任务队列或工作流引擎。Worker 使用指数空闲退避降低无任务时的 PostgreSQL 查询频率，并使用 `LISTEN/NOTIFY` 获得低延迟唤醒；由于通知不持久，定时扫描继续承担正确性兜底。事件 API 增加 `after_id/limit`，前端按事件 ID 增量追加。产物层增加本地与 S3-compatible 后端的统一接口，MinIO 通过 endpoint 配置接入；本地模式仍为默认值。
+
+### v0.1.0（2026-10-24）
+
+完成六步 DAG、PostgreSQL 状态模型、独立 Worker、重试、租约恢复、结果缓存、MOCK GPU 调度、查询 API 和中文监控台。
+
 ## 1. 实现方式与阶段
 
 开发按规格分阶段完成：首先建立 PostgreSQL 模型和迁移；随后实现六步 DAG、API 与单 Worker；再加入原子领取、执行历史、退避重试、租约心跳/恢复、产物缓存和 MOCK GPU 租约；最后增加故障注入测试与文档。耗时处理始终位于数据库事务之外。
@@ -53,7 +63,7 @@ API 创建任务后立即返回。独立 Worker 轮询 PostgreSQL，在短事务
 
 ## 10. 秒级到小时级扩展
 
-心跳周期应显著短于租约，租约需容忍短暂抖动。长处理拆成可校验分块并持久化检查点；数据库只保存元数据，产物进入对象存储。指标应拆分 queue latency、run duration、retry count、lease age 和 stuck task。调度应按资源类型、优先级和预估时长分队列，并设置租户/长短任务公平策略。生产扩展可逐步引入 PostgreSQL 通知、专用队列或 Temporal，而不是在 MVP 中预先部署复杂平台。
+心跳周期应显著短于租约，租约需容忍短暂抖动。v0.2.0 已实现 PostgreSQL 通知加空闲退避扫描，但通知仅用于唤醒。长处理仍需进一步拆成可校验分块并持久化检查点；数据库只保存元数据，产物可切换到 S3/MinIO。指标应拆分 queue latency、run duration、retry count、lease age 和 stuck task。更高负载时才考虑按资源类型、优先级和预估时长分队列或引入专用队列/Temporal，避免在当前规模提前增加复杂度。
 
 ## 11. GPU 调度与可观测性
 
@@ -67,10 +77,11 @@ API 创建任务后立即返回。独立 Worker 轮询 PostgreSQL，在短事务
 
 ## 交付状态边界
 
-- 已实现且有自动化测试：六步 DAG、API 主流程、自动与手动重试、尝试历史、原子领取、真实 Worker 子进程终止恢复、心跳续租、旧 Worker 防覆盖、协作取消、产物补登记、孤立产物篡改拒绝、缓存复用与失效、MOCK GPU 容量/OOM/释放/过期回收。
+- 已实现且有自动化测试：六步 DAG、API 主流程、自动与手动重试、尝试历史、原子领取、真实 Worker 子进程终止恢复、心跳续租、旧 Worker 防覆盖、协作取消、产物补登记、孤立产物篡改拒绝、缓存复用与失效、MOCK GPU 容量/OOM/释放/过期回收、空闲退避、事件增量查询和 S3-compatible 存储接口。
 - 已实现并做过人工独立进程验证：Uvicorn 与 Worker 分进程启动，通过 HTTP 创建任务并完成全部六个步骤。
 - 已实现但没有专项性能或压力验证：结构化 JSON 日志、多个任务的长期公平性、较大 Worker 数量下的吞吐量。
-- 仅提供设计方案：S3/MinIO、大任务分块检查点、真实 GPU/NVML/DCGM、Prometheus/Grafana、消息队列或 Temporal、生产级自动扩缩容。
+- 已实现但尚未连接真实外部服务验证：S3/MinIO 产物后端及 PostgreSQL 通知唤醒的高并发收益。
+- 仅提供设计方案：大任务分块检查点、真实 GPU/NVML/DCGM、Prometheus/Grafana、消息队列或 Temporal、生产级自动扩缩容。
 - 未实现且属于 MVP 范围外：真实动画处理、真实 AI 模型、真实 GPU 集群、Kubernetes、Kafka/Celery/Redis、复杂前端和多租户权限。
 
 最终交付审查发现并修复了手动重试重复 attempt 编号、取消后的失败/恢复状态残留，以及孤立产物缺少独立发布校验元数据三个边界问题。修复后重新运行全部测试和迁移一致性检查，结果以最终审查报告中的命令输出为准。

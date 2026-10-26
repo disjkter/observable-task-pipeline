@@ -10,6 +10,8 @@ import {
 
 const ACTIVE_STATUSES = new Set(["QUEUED", "RUNNING", "RETRY_WAIT", "CANCEL_REQUESTED"]);
 const POLL_INTERVAL_MS = 2500;
+const EVENT_PAGE_LIMIT = 200;
+const MAX_EVENT_PAGES_PER_REFRESH = 5;
 const taskId = decodeURIComponent(window.location.pathname.split("/").filter(Boolean).at(-1) || "");
 const state = {
   loading: false,
@@ -20,6 +22,7 @@ const state = {
   steps: [],
   attempts: new Map(),
   events: [],
+  lastEventId: 0,
 };
 
 const nodes = {
@@ -193,18 +196,36 @@ async function checkHealth() {
   }
 }
 
+async function fetchNewEvents() {
+  const fresh = [];
+  let afterId = state.lastEventId;
+  for (let page = 0; page < MAX_EVENT_PAGES_PER_REFRESH; page += 1) {
+    const batch = await api.getEvents(taskId, { afterId, limit: EVENT_PAGE_LIMIT });
+    fresh.push(...batch);
+    if (!batch.length) break;
+    afterId = batch.at(-1).id;
+    if (batch.length < EVENT_PAGE_LIMIT) break;
+  }
+  if (fresh.length) {
+    const known = new Set(state.events.map((event) => event.id));
+    state.events.push(...fresh.filter((event) => !known.has(event.id)));
+    state.events.sort((left, right) => left.id - right.id);
+    state.lastEventId = Math.max(state.lastEventId, ...fresh.map((event) => event.id));
+  }
+}
+
 async function loadDetail({ quiet = false } = {}) {
   if (state.loading) return;
   state.loading = true; nodes.refresh.disabled = true;
   if (!quiet) setMessage(nodes.message, "正在读取任务详情…");
   try {
-    const [task, steps, events] = await Promise.all([
-      api.getTask(taskId), api.getSteps(taskId), api.getEvents(taskId),
+    const [task, steps] = await Promise.all([
+      api.getTask(taskId), api.getSteps(taskId), fetchNewEvents(),
     ]);
     const attemptPairs = await Promise.all(
       steps.map(async (step) => [step.step_key, await api.getAttempts(taskId, step.step_key)]),
     );
-    state.task = task; state.steps = steps; state.events = events; state.attempts = new Map(attemptPairs);
+    state.task = task; state.steps = steps; state.attempts = new Map(attemptPairs);
     setOverview(task); renderSteps(); renderAttempts(); renderEvents(); renderArtifacts();
     document.querySelector("#refresh-time").textContent = `最近刷新：${new Date().toLocaleTimeString("zh-CN", { hour12: false })}`;
     setMessage(nodes.message);

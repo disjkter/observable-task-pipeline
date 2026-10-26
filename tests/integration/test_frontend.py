@@ -1,6 +1,7 @@
 from fastapi.testclient import TestClient
 
 from app.main import app
+from app.workers.wakeup import PostgresWakeup
 
 client = TestClient(app)
 
@@ -57,3 +58,40 @@ def test_steps_follow_workflow_order() -> None:
         "generate_report",
         "package_result",
     ]
+
+
+def test_events_support_incremental_query_and_limit() -> None:
+    created = client.post("/api/tasks", json={"input": {"source": "mock://events"}})
+    task_id = created.json()["id"]
+
+    first = client.get(f"/api/tasks/{task_id}/events", params={"limit": 1})
+    assert first.status_code == 200
+    assert len(first.json()) == 1
+
+    event_id = first.json()[0]["id"]
+    assert (
+        client.get(
+            f"/api/tasks/{task_id}/events",
+            params={"after_id": event_id, "limit": 10},
+        ).json()
+        == []
+    )
+
+    assert (
+        client.get(
+            f"/api/tasks/{task_id}/events",
+            params={"after_id": -1},
+        ).status_code
+        == 422
+    )
+
+
+def test_task_creation_wakes_postgresql_listener() -> None:
+    wakeup = PostgresWakeup()
+    wakeup.open()
+    try:
+        created = client.post("/api/tasks", json={"input": {"source": "mock://notify"}})
+        assert created.status_code == 201
+        assert wakeup.wait(1.0)
+    finally:
+        wakeup.close()

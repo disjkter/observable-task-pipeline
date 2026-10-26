@@ -150,9 +150,14 @@ def read_attempts(
 
 
 @router.get("/api/tasks/{task_id}/events", response_model=list[EventRead])
-def read_events(task_id: uuid.UUID, session: Session = Depends(get_session)):
+def read_events(
+    task_id: uuid.UUID,
+    after_id: int | None = Query(default=None, ge=0),
+    limit: int = Query(default=200, ge=1, le=500),
+    session: Session = Depends(get_session),
+):
     require_task(session, task_id)
-    return list_events(session, task_id)
+    return list_events(session, task_id, after_id=after_id, limit=limit)
 
 
 @router.post("/api/tasks/{task_id}/retry", response_model=TaskRead)

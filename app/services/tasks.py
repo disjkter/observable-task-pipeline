@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session, selectinload
 from app.engine.status import StepStatus, TaskStatus
 from app.engine.workflow import get_workflow
 from app.models import Task, TaskEvent, TaskStep
+from app.services.notifications import notify_task_ready
 from app.services.state import add_event, refresh_task
 
 
@@ -51,6 +52,7 @@ def create_task(
             )
         )
     add_event(session, task, "TASK_CREATED", new_status=task.status)
+    notify_task_ready(session, task.id, "TASK_CREATED")
     session.flush()
     session.refresh(task)
     return task, True
@@ -93,14 +95,20 @@ def retry_failed_task(session: Session, task: Task) -> Task:
             step.status = StepStatus.BLOCKED
     add_event(session, task, "MANUAL_RETRY_REQUESTED")
     refresh_task(session, task)
+    notify_task_ready(session, task.id, "MANUAL_RETRY_REQUESTED")
     return task
 
 
-def list_events(session: Session, task_id: uuid.UUID) -> list[TaskEvent]:
+def list_events(
+    session: Session,
+    task_id: uuid.UUID,
+    *,
+    after_id: int | None = None,
+    limit: int = 200,
+) -> list[TaskEvent]:
+    filters = [TaskEvent.task_id == task_id]
+    if after_id is not None:
+        filters.append(TaskEvent.id > after_id)
     return list(
-        session.scalars(
-            select(TaskEvent)
-            .where(TaskEvent.task_id == task_id)
-            .order_by(TaskEvent.created_at, TaskEvent.id)
-        )
+        session.scalars(select(TaskEvent).where(*filters).order_by(TaskEvent.id).limit(limit))
     )

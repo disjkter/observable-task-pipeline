@@ -15,6 +15,7 @@ from app.storage.artifacts import ArtifactStore
 
 def recover_expired_steps(session: Session) -> int:
     now = datetime.now(UTC)
+    store = ArtifactStore()
     steps = list(
         session.scalars(
             select(TaskStep)
@@ -73,18 +74,18 @@ def recover_expired_steps(session: Session) -> int:
             cache = session.scalar(
                 select(StepResultCache).where(StepResultCache.input_hash == step.input_hash)
             )
-            artifact_path = ArtifactStore().path_for(step.step_key, step.input_hash)
-            published_checksum = ArtifactStore.published_checksum(artifact_path)
+            artifact_uri = store.uri_for(step.step_key, step.input_hash)
+            published_checksum = store.published_checksum(artifact_uri)
             if cache is None and published_checksum:
                 cache = StepResultCache(
                     input_hash=step.input_hash,
                     status=StepStatus.SUCCEEDED,
-                    output_uri=str(artifact_path),
+                    output_uri=artifact_uri,
                     checksum=published_checksum,
                 )
                 session.add(cache)
-        if cache and ArtifactStore.validate(cache.output_uri, cache.checksum):
-            output = ArtifactStore.read(cache.output_uri)
+        if cache and store.validate(cache.output_uri, cache.checksum):
+            output = store.read(cache.output_uri)
             step.status = StepStatus.SUCCEEDED
             step.output_json = output
             step.finished_at = now

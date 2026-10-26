@@ -126,7 +126,10 @@ def prepare_execution(session: Session, claim: Claim) -> tuple[dict, dict, str]:
     return task.input_json, upstream, input_hash
 
 
-def find_cache(session: Session, input_hash: str) -> StepResultCache | None:
+def find_cache(
+    session: Session, input_hash: str, store: ArtifactStore | None = None
+) -> StepResultCache | None:
+    artifact_store = store or ArtifactStore()
     cache = session.scalar(
         select(StepResultCache).where(
             StepResultCache.input_hash == input_hash,
@@ -136,7 +139,7 @@ def find_cache(session: Session, input_hash: str) -> StepResultCache | None:
             ),
         )
     )
-    if cache and ArtifactStore.validate(cache.output_uri, cache.checksum):
+    if cache and artifact_store.validate(cache.output_uri, cache.checksum):
         return cache
     if cache:
         session.delete(cache)

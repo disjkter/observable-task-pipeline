@@ -46,7 +46,11 @@ export const api = {
   getAttempts: (taskId, stepKey) => request(
     `/api/tasks/${encodeURIComponent(taskId)}/steps/${encodeURIComponent(stepKey)}/attempts`,
   ),
-  getEvents: (taskId) => request(`/api/tasks/${encodeURIComponent(taskId)}/events`),
+  getEvents: (taskId, { afterId = null, limit = 200 } = {}) => {
+    const query = new URLSearchParams({ limit: String(limit) });
+    if (afterId !== null) query.set("after_id", String(afterId));
+    return request(`/api/tasks/${encodeURIComponent(taskId)}/events?${query}`);
+  },
   retryTask: (taskId) => request(`/api/tasks/${encodeURIComponent(taskId)}/retry`, { method: "POST" }),
   cancelTask: (taskId) => request(`/api/tasks/${encodeURIComponent(taskId)}/cancel`, { method: "POST" }),
 };

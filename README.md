@@ -6,13 +6,30 @@
 
 ```text
 Client -> FastAPI -> PostgreSQL <- Worker(s)
-                         ^           |
-                         |           +-> MOCK handlers
-                         |           +-> local artifact store
+                         |           ^    |
+                         +-- NOTIFY -+    +-> MOCK handlers
+                         |                +-> local or S3/MinIO artifacts
                          +-> leases / attempts / events / cache / GPU leases
 ```
 
-PostgreSQL 是状态事实来源。API 只创建和查询任务；独立 Worker 使用短事务与 `FOR UPDATE SKIP LOCKED` 原子领取步骤，在事务外执行耗时处理。Worker 通过心跳续租；恢复器处理过期租约，并以执行令牌阻止旧 Worker 覆盖新结果。
+PostgreSQL 是状态事实来源。API 只创建和查询任务；独立 Worker 使用短事务与 `FOR UPDATE SKIP LOCKED` 原子领取步骤，在事务外执行耗时处理。Worker 通过心跳续租；恢复器处理过期租约，并以执行令牌阻止旧 Worker 覆盖新结果。PostgreSQL `LISTEN/NOTIFY` 只用于低延迟唤醒，通知丢失不会影响正确性，Worker 仍以有上限的空闲退避扫描兜底。
+
+## 版本与迭代记录
+
+### v0.2.0（2026-10-26）
+
+- Worker 空闲等待从固定频率轮询改为指数退避，领取任务后重置退避。
+- 使用 PostgreSQL `LISTEN/NOTIFY` 唤醒空闲 Worker，同时保留低频扫描作为可靠性兜底。
+- 事件接口增加 `after_id` 游标和 `limit`，详情页只追加新事件，不再重复获取全部时间线。
+- 产物存储抽象为本地与 S3-compatible 两种后端；MinIO 可通过自定义 endpoint 接入。
+- 核心调度仍只依赖 PostgreSQL，没有引入任务队列或工作流引擎。
+
+### v0.1.0（2026-10-24）
+
+- 完成六步 DAG、任务/步骤状态、执行历史和事件 API。
+- 完成并发领取、自动重试、租约心跳、崩溃恢复、旧 Worker 防覆盖和协作取消。
+- 完成本地产物原子发布、SHA-256 校验、跨任务缓存和 MOCK GPU 资源租约。
+- 增加中文任务监控台。
 
 六步工作流：
 
@@ -35,8 +52,9 @@ transcode_video --------------------------------------> generate_report
 - SQLAlchemy 2.x / Alembic
 - Pydantic Settings
 - Pytest / HTTPX
+- boto3（仅启用 S3/MinIO 产物后端时安装）
 
-不依赖 Docker、Celery、Redis、Kafka 或 Kubernetes。
+核心运行不依赖 Docker、Celery、Redis、Kafka 或 Kubernetes。
 
 ## Windows 安装
 
@@ -90,6 +108,31 @@ uvicorn app.main:app --reload
 python -m app.worker
 ```
 
+Worker 空闲时从 `POLL_INTERVAL_SECONDS` 开始指数退避，最大等待时间由
+`WORKER_IDLE_BACKOFF_MAX_SECONDS` 控制。创建任务、手动重试或步骤就绪时会在同一数据库事务中发送 `NOTIFY`；通知仅缩短等待，不取代数据库条件领取和兜底扫描。
+
+### 可选：MinIO/S3 产物存储
+
+默认 `ARTIFACT_BACKEND=local`，行为与 v0.1.0 一致。启用 S3-compatible 后端时安装可选依赖：
+
+```powershell
+pip install -e ".[dev,s3]"
+```
+
+配置示例：
+
+```env
+ARTIFACT_BACKEND=s3
+ARTIFACT_S3_BUCKET=pipeline-artifacts
+ARTIFACT_S3_PREFIX=observable-task-pipeline
+ARTIFACT_S3_ENDPOINT_URL=http://127.0.0.1:9000
+ARTIFACT_S3_REGION=us-east-1
+ARTIFACT_S3_ACCESS_KEY_ID=replace-locally
+ARTIFACT_S3_SECRET_ACCESS_KEY=replace-locally
+```
+
+Bucket 需预先创建。真实密钥只写入被 Git 忽略的 `.env`，不得写入 `.env.example` 或提交记录。AWS S3 可留空 endpoint，并使用 boto3 标准凭据链。两种后端都保持相同的 `publish/read/validate/published_checksum` 接口和 `.sha256` 发布标记语义。
+
 Swagger UI：<http://127.0.0.1:8000/docs>
 
 ## 中文任务监控台
@@ -127,12 +170,12 @@ POST /api/tasks
 GET  /api/tasks/{task_id}
 GET  /api/tasks/{task_id}/steps
 GET  /api/tasks/{task_id}/steps/{step_key}/attempts
-GET  /api/tasks/{task_id}/events
+GET  /api/tasks/{task_id}/events?after_id={last_event_id}&limit=200
 POST /api/tasks/{task_id}/retry
 POST /api/tasks/{task_id}/cancel
 ```
 
-当前页面不支持真实文件上传、步骤级重试、产物下载、实时 WebSocket、真实 GPU 指标或用户权限；产物路径只作为后端返回的文本展示。
+事件接口按 ID 升序返回 `id > after_id` 的新事件，`limit` 范围为 1～500；省略 `after_id` 时从最早事件开始。当前页面不支持真实文件上传、步骤级重试、产物下载、实时 WebSocket、真实 GPU 指标或用户权限；产物 URI 只作为后端返回的文本展示。
 
 ## API 示例
 
@@ -211,8 +254,8 @@ Invoke-RestMethod "http://127.0.0.1:8000/api/tasks/$($task.id)/events"
 ## 已知限制
 
 - 处理器、GPU 和动画产物均为 MOCK；没有验证真实 GPU 利用率或显存分配。
-- 本地文件产物存储只适合单机；多机应迁移至 S3/MinIO。
-- 当前轮询 PostgreSQL，未部署消息队列；高负载时应加入通知或队列层。
+- 本地后端只适合单机；v0.2.0 已提供 S3/MinIO 抽象，但尚未做真实对象存储的压力、权限和故障注入测试。
+- 当前使用 PostgreSQL 通知加退避扫描，未部署消息队列；`NOTIFY` 是广播式、非持久通知，不能代替数据库事实状态。
 - 取消为协作式：不能抢占不可取消的外部调用，只会在处理器返回后拒绝发布成功状态。
 - 保证是至少一次执行加幂等结果处理，不宣称严格 exactly-once。
 - 当前开发机验证版本为 PostgreSQL 17.11，规格目标 PostgreSQL 16；所用特性在两者均受支持。

@@ -19,6 +19,7 @@ from app.services.execution import (
     renew_claim,
 )
 from app.storage.artifacts import ArtifactStore
+from app.workers.wakeup import IdleBackoff, PostgresWakeup
 
 logger = logging.getLogger(__name__)
 
@@ -49,7 +50,7 @@ class Worker:
         try:
             with SessionLocal.begin() as session:
                 task_input, upstream, input_hash = prepare_execution(session, claim)
-                cache = find_cache(session, input_hash)
+                cache = find_cache(session, input_hash, self.store)
                 if cache:
                     output = self.store.read(cache.output_uri)
                     return finish_success(
@@ -85,9 +86,22 @@ class Worker:
 
     def run_forever(self) -> None:
         logger.info("worker_started", extra={"worker_id": self.worker_id})
-        while True:
-            if not self.run_once():
-                time.sleep(get_settings().poll_interval_seconds)
+        settings = get_settings()
+        backoff = IdleBackoff(
+            initial_seconds=settings.poll_interval_seconds,
+            max_seconds=settings.worker_idle_backoff_max_seconds,
+            multiplier=settings.worker_idle_backoff_multiplier,
+        )
+        wakeup = PostgresWakeup()
+        try:
+            while True:
+                if self.run_once():
+                    backoff.reset()
+                    continue
+                if wakeup.wait(backoff.next_delay()):
+                    backoff.reset()
+        finally:
+            wakeup.close()
 
 
 def run_until_idle(max_iterations: int = 100, worker_id: str = "test-worker") -> int:

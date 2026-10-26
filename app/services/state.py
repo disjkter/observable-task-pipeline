@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 
 from app.engine.status import StepStatus, TaskStatus
 from app.models import Task, TaskEvent
+from app.services.notifications import notify_task_ready
 
 
 def add_event(
@@ -49,6 +50,7 @@ def refresh_task(session: Session, task: Task) -> None:
                 old_status=old_status,
                 new_status=step.status,
             )
+            notify_task_ready(session, task.id, "STEP_READY")
 
     succeeded = sum(step.status == StepStatus.SUCCEEDED for step in steps)
     task.progress = 100 if succeeded == len(steps) else int(succeeded * 100 / len(steps))
